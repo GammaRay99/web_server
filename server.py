@@ -10,4 +10,4 @@ def home():
 	return """<h1>Hello World</h1>"""
 
 
-app.run(keep_log=True)
+app.run(keep_log=False)
