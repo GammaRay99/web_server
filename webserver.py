@@ -1,4 +1,5 @@
 import socket
+import os
 import utils
 
 
@@ -9,9 +10,7 @@ class WebApp(object):
 		self.ip = "0.0.0.0"
 
 		self.paths = {
-				'GET': { '/favicon.ico': lambda: self.file("ico.png"),
-						 '/404': utils.sample_404 },
-
+				'GET': { '/404': utils.sample_404 },
 				'POST': { '/404': utils.sample_404 }
 				}
 
@@ -42,12 +41,18 @@ class WebApp(object):
 		self.server.bind((self.ip, self.port))
 		self.server.listen()
 
+		path, static_files = utils.get_static_files()
+		for filename in static_files:
+			self.paths["GET"][filename] = self.send_file(path + filename)
+
+
 	def run(self, keep_log=True) -> None:
 		"""
 		Main loop of the web server
 		:param keep_log: Determine either or not the server should keep
 		track of the connexions. They are stored in a txt file named "log.txt"
 		"""
+		print(f"Running web service on http://{self.ip}:{self.port}\nLOG = {keep_log}")
 		if keep_log:
 			with open("log.txt", 'w') as f:
 				pass
@@ -55,10 +60,12 @@ class WebApp(object):
 		while True:
 			client, _ = self.server.accept()
 			request = self._get_request(client)
+			if not request.http_request:
+				continue
 
 
 			if keep_log:
-				utils.log(f"{request.headers['Host']} - {request.action} {request.path}")
+				utils.log(f"{request.headers['Host']} - {request.raw_content}")
 
 			# If the path exists, we send the corresponding file
 			# If not, we send the 404 page
@@ -103,12 +110,9 @@ class WebApp(object):
 
 		return wrapper
 
-	def file(self, pathname: str) -> bytes:
-		"""
-		Returns any file as bytes
-		:param pathname: the name of the file
-		:return: file as bytes
-		:rtype: bytes
-		"""
-		with open(pathname, "rb") as img:
-			return img.read()
+
+	def send_file(self, pathname: str): # -> function
+		def wrapper():
+			with open(pathname, "rb") as f:
+				return f.read()
+		return wrapper
