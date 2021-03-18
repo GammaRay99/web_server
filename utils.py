@@ -1,23 +1,5 @@
 import socket
-
-
-
-def HTTP_RESPONSE_HEADERS(status_code: int) -> str:
-	"""
-	Returns a HTTP response with corrects header
-
-	:param status_code: The status code of the HTTP request
-	:return: Valid HTTP header response
-	:rtype: str
-	"""
-	head = f"HTTP/1.1 {status_code} OK\n"
-	next_lines = """Date: Fri, 16 Jun 2021 23:59:59 UTC
-NotAHeader: what
-Content-Type: text/html
-
-"""
-	return (head + next_lines).encode("utf-8")
-
+import os
 
 
 class Request(object):
@@ -31,9 +13,14 @@ class Request(object):
 	"""
 	def __init__(self, raw_request: str):
 		self.raw_content = [line[:-1] for line in raw_request.split('\n')]
-
 		start = self.raw_content[0].split(' ')
+
 		self.action = start[0]
+		if self.action not in ("GET", "POST"):
+			self.http_request = False
+			return
+			
+		self.http_request = True
 		self.path = start[1]
 		self.protocol = start[2]
 
@@ -62,6 +49,30 @@ class PathNameError(Exception):
 		return self.content if self.content is not None else "Path name should always starts with \"/\""
 
 
+def HTTP_RESPONSE_HEADERS(status_code: int) -> str:
+	"""
+	Returns a HTTP response with corrects header
+
+	:param status_code: The status code of the HTTP request
+	:return: Valid HTTP header response
+	:rtype: str
+	"""
+	head = f"HTTP/1.1 {status_code} OK\n"
+	next_lines = """Date: Fri, 16 Jun 2021 23:59:59 UTC
+NotAHeader: what
+Content-Type: text/html
+
+"""
+	return (head + next_lines).encode("utf-8")
+
+
+def get_static_files():
+	try:
+		return ("./static", list(map(lambda file: f"/{file}", os.listdir("./static"))))
+	except FileNotFoundError:
+		return []
+
+
 def log(content: str):
 	with open("log.txt", "a") as f:
 		f.write('\n')
@@ -75,7 +86,3 @@ def sample_404():
 </body>
 </html>"""
 
-
-def sample_ico():
-	with open("ico.png", "rb") as img:
-		return img.read()
