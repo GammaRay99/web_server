@@ -5,16 +5,18 @@ import utils
 
 
 class WebApp(object):
-	def __init__(self, port=8080):
+	def __init__(self, port=8080, ip="0.0.0.0"):
 		self.port = port
-		self.ip = "0.0.0.0"
+		self.ip = ip
 
 		self.paths = {
 				'GET': { '/404': utils.sample_404 },
 				'POST': { '/404': utils.sample_404 }
 				}
 
-		self.server = None
+		self.response_type = "text/html"
+
+		self._server = None
 
 	def _get_request(self, client: socket.socket) -> utils.Request:
 		"""
@@ -37,13 +39,13 @@ class WebApp(object):
 		the IP and the PORT of the WebApp and
 		open it for connexions.
 		"""
-		self.server = socket.socket()
-		self.server.bind((self.ip, self.port))
-		self.server.listen()
+		self._server = socket.socket()
+		self._server.bind((self.ip, self.port))
+		self._server.listen()
 
 		path, static_files = utils.get_static_files()
 		for filename in static_files:
-			self.paths["GET"][filename] = self.send_file(path + filename)
+			self.paths["GET"][filename] = self._send_file(path + filename)
 
 
 	def run(self, keep_log=True) -> None:
@@ -54,11 +56,11 @@ class WebApp(object):
 		"""
 		print(f"Running web service on http://{self.ip}:{self.port}\nLOG = {keep_log}")
 		if keep_log:
-			with open("log.txt", 'w') as f:
+			with open("log.txt", 'w') as _:
 				pass
 
 		while True:
-			client, _ = self.server.accept()
+			client, _ = self._server.accept()
 			request = self._get_request(client)
 			if not request.http_request:
 				continue
@@ -70,10 +72,10 @@ class WebApp(object):
 			# If the path exists, we send the corresponding file
 			# If not, we send the 404 page
 			try:
-				headers = utils.HTTP_RESPONSE_HEADERS(200)
+				headers = utils.HTTP_RESPONSE_HEADERS(200, self.response_type)
 				content = self.paths[request.action][request.path]()
 			except KeyError:
-				headers = utils.HTTP_RESPONSE_HEADERS(404)
+				headers = utils.HTTP_RESPONSE_HEADERS(404, self.response_type)
 				content = self.paths[request.action]['/404']()
 
 			# Determines if we already converted the content to
@@ -111,7 +113,17 @@ class WebApp(object):
 		return wrapper
 
 
-	def send_file(self, pathname: str): # -> function
+	def read_file(self, pathname:str) -> str:
+		"""
+		Simply reads a file and output the content
+
+		:param pathname: path of the file
+		:return: content of the file
+		"""
+		with open(pathname, "r") as f:
+			return f.read()
+
+	def _send_file(self, pathname: str): # -> function
 		def wrapper():
 			with open(pathname, "rb") as f:
 				return f.read()
