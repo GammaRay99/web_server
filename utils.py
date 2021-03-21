@@ -49,21 +49,27 @@ class PathNameError(Exception):
 		return self.content if self.content is not None else "Path name should always starts with \"/\""
 
 
-def HTTP_RESPONSE_HEADERS(status_code: int) -> str:
+def HTTP_RESPONSE_HEADERS(status_code: int, content_type: str) -> str:
 	"""
 	Returns a HTTP response with corrects header
 
 	:param status_code: The status code of the HTTP request
+	:param content_type: The type of the content (text, html, json...)
 	:return: Valid HTTP header response
 	:rtype: str
 	"""
-	head = f"HTTP/1.1 {status_code} OK\n"
-	next_lines = """Date: Fri, 16 Jun 2021 23:59:59 UTC
-NotAHeader: what
-Content-Type: text/html
+	head = f"HTTP/1.1 {status_code} OK"
+	date = "Date: Fri, 16 Jun 2021 23:59:59 UTC"
+	headers = {
+				'NotAHeader': "what",
+				'Content-Type': content_type
+		   	}
 
-"""
-	return (head + next_lines).encode("utf-8")
+
+	result = [head, date] + list(map(lambda content: f"{content[0]}: {content[1]}", headers.items()))
+	result = '\n'.join(result)
+
+	return (result + '\n\n').encode("utf-8")
 
 
 def get_static_files():
