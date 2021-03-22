@@ -1,7 +1,8 @@
+import threading
 import socket
 import os
-import utils
 
+import utils
 
 
 class WebApp(object):
@@ -22,7 +23,6 @@ class WebApp(object):
 		"""
 		Waits for a connexion from a client and return a
 		Request object.
-
 		:param client: The client we are listening to
 		:type client: socket.socket
 		:return: A request object of the request the client sent
@@ -31,6 +31,36 @@ class WebApp(object):
 		request = client.recv(1024).decode("utf-8")
 
 		return utils.Request(request)
+
+
+	def _handle_client(self, client, keep_log):
+		request = self._get_request(client)
+		if not request.http_request:
+			client.close()
+			return
+
+		if keep_log:
+			utils.log(f"{':'.join([str(el) for el in client.getpeername()])} - {request.raw_content}")
+
+		# If the path exists, we send the corresponding file
+		# If not, we send the 404 page
+		try:
+			headers = utils.HTTP_RESPONSE_HEADERS(200, self.response_type)
+			content = self.paths[request.action][request.path]()
+		except KeyError:
+			headers = utils.HTTP_RESPONSE_HEADERS(404, self.response_type)
+			content = self.paths[request.action]['/404']()
+
+		# Determines if we already converted the content to
+		# bytes or not (png will already be bytes, text not)
+		if type(content) == str:
+			response = headers + content.encode("utf-8")
+		else:
+			response = headers + content
+
+		# Send everthing
+		client.send(response)
+		client.close()
 
 
 	def init(self) -> None:
@@ -44,8 +74,9 @@ class WebApp(object):
 		self._server.listen()
 
 		path, static_files = utils.get_static_files()
-		for filename in static_files:
-			self.paths["GET"][filename] = self._send_file(path + filename)
+		if path is not None:
+			for filename in static_files:
+				self.paths["GET"][filename] = self._send_file(path + filename)
 
 
 	def run(self, keep_log=True) -> None:
@@ -61,33 +92,9 @@ class WebApp(object):
 
 		while True:
 			client, _ = self._server.accept()
-			request = self._get_request(client)
-			if not request.http_request:
-				continue
+			current_thread = threading.Thread(target=self._handle_client, args=(client, keep_log))
+			current_thread.start()
 
-
-			if keep_log:
-				utils.log(f"{request.headers['Host']} - {request.raw_content}")
-
-			# If the path exists, we send the corresponding file
-			# If not, we send the 404 page
-			try:
-				headers = utils.HTTP_RESPONSE_HEADERS(200, self.response_type)
-				content = self.paths[request.action][request.path]()
-			except KeyError:
-				headers = utils.HTTP_RESPONSE_HEADERS(404, self.response_type)
-				content = self.paths[request.action]['/404']()
-
-			# Determines if we already converted the content to
-			# bytes or not (png will already be bytes, text not)
-			if type(content) == str:
-				response = headers + content.encode("utf-8")
-			else:
-				response = headers + content
-
-			# Send everthing
-			client.send(response)
-			client.close()
 
 	def load_path(self, pathname: str, method="GET") -> None:
 		"""
@@ -116,7 +123,6 @@ class WebApp(object):
 	def read_file(self, pathname:str) -> str:
 		"""
 		Simply reads a file and output the content
-
 		:param pathname: path of the file
 		:return: content of the file
 		"""
