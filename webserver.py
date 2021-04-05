@@ -1,21 +1,22 @@
 import threading
 import socket
-import os
 
 import utils
 
 
 class WebApp(object):
 	def __init__(self, port=8080, ip="0.0.0.0"):
-		self.port = port
-		self.ip = ip
+		self.network_info = (ip, port)
 
 		self.paths = {
-				'GET': { '/404': utils.sample_404 },
-				'POST': { '/404': utils.sample_404 }
+				'GET': [],
+				'POST': [],
+				'PUT': [],
+				'DELETE': []
 				}
 
-		self.response_type = "text/html"
+		self.request = None
+		self.response = None
 
 		self._server = None
 
@@ -28,39 +29,41 @@ class WebApp(object):
 		:return: A request object of the request the client sent
 		:rtype: utils.Request
 		"""
-		request = client.recv(1024).decode("utf-8")
+		req = client.recv(1024).decode("utf-8")
 
-		return utils.Request(request)
+		return utils.Request(req)
 
 
 	def _handle_client(self, client, keep_log):
-		request = self._get_request(client)
-		if not request.http_request:
+		self.request = self._get_request(client)
+		self.response = utils.Response()
+
+		if not self.request.http_request:
 			client.close()
 			return
-
+		
 		if keep_log:
-			utils.log(f"{':'.join([str(el) for el in client.getpeername()])} - {request.raw_content}")
+			utils.log(f"{':'.join([str(el) for el in client.getpeername()])} - {self.request.raw_content}")
 
 		# If the path exists, we send the corresponding file
 		# If not, we send the 404 page
-		try:
-			headers = utils.HTTP_RESPONSE_HEADERS(200, self.response_type)
-			content = self.paths[request.action][request.path]()
-		except KeyError:
-			headers = utils.HTTP_RESPONSE_HEADERS(404, self.response_type)
-			content = self.paths[request.action]['/404']()
+		unknown_path = True
+		for paths, webpage in self.paths[self.request.method]:
+			pathnames = list(map(lambda el: f"/{el}", paths))
+			if self.request.path in pathnames:
+				self.response.body = webpage()
+				unknown_path = False
+				break
 
-		# Determines if we already converted the content to
-		# bytes or not (png will already be bytes, text not)
-		if type(content) == str:
-			response = headers + content.encode("utf-8")
-		else:
-			response = headers + content
+		if unknown_path:
+			self.response.status_code = 404
+			self.response.body = utils.sample_404()
 
 		# Send everthing
-		client.send(response)
+		client.send(self.response.create())
 		client.close()
+		self.request = None
+		self.response = None
 
 
 	def init(self) -> None:
@@ -70,13 +73,13 @@ class WebApp(object):
 		open it for connexions.
 		"""
 		self._server = socket.socket()
-		self._server.bind((self.ip, self.port))
+		self._server.bind(self.network_info)
 		self._server.listen()
 
 		path, static_files = utils.get_static_files()
 		if path is not None:
 			for filename in static_files:
-				self.paths["GET"][filename] = self._send_file(path + filename)
+				self.paths["GET"].append(([filename[1:]], self._send_file(path + filename)))
 
 
 	def run(self, keep_log=True) -> None:
@@ -85,7 +88,7 @@ class WebApp(object):
 		:param keep_log: Determine either or not the server should keep
 		track of the connexions. They are stored in a txt file named "log.txt"
 		"""
-		print(f"Running web service on http://{self.ip}:{self.port}\nLOG = {keep_log}")
+		print(f"Running web service on http://{self.network_info[0]}:{self.network_info[1]}\nLOG = {keep_log}")
 		if keep_log:
 			with open("log.txt", 'w') as _:
 				pass
@@ -96,17 +99,14 @@ class WebApp(object):
 			current_thread.start()
 
 
-	def load_path(self, pathname: str, method="GET") -> None:
+	def load_path(self, pathnames: list, method="GET") -> None:
 		"""
 		Create a new key in our path dictionnary, and assign
 		it the fuction passed as decorator's parameter.
 		:param pathname: The relative name of the path "/some_name"
-		:param method: The method for the path ("GET" or "POST" only)
+		:param method: The method expected for the path
 		"""
-		if pathname[0] != '/':
-			raise utils.PathNameError()
-
-		if method not in ("GET", "POST"):
+		if method not in utils.METHODS:
 			raise utils.MethodError()
 
 		def wrapper(func) -> None:
@@ -115,19 +115,9 @@ class WebApp(object):
 			:param func: the function
 			:type func: function
 			"""
-			self.paths[method][pathname] = func
-
+			self.paths[method].append((pathnames, func))
 		return wrapper
 
-
-	def read_file(self, pathname:str) -> str:
-		"""
-		Simply reads a file and output the content
-		:param pathname: path of the file
-		:return: content of the file
-		"""
-		with open(pathname, "r") as f:
-			return f.read()
 
 	def _send_file(self, pathname: str): # -> function
 		def wrapper():
